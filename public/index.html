@@ -6,25 +6,13 @@
   <style>
     body { margin: 0; overflow: hidden; background: #111; color: white; font-family: sans-serif; text-align: center; }
 
-    #join {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      height: 100vh;
-    }
-    #join input {
-      padding: 10px; font-size: 18px; border: none; border-radius: 4px; width: 250px; text-align: center;
-    }
-    #join button {
+    #join, #lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    #join input { padding: 10px; font-size: 18px; border: none; border-radius: 4px; width: 250px; text-align: center; }
+    #join button, #startBtn {
       margin-top: 15px; padding: 10px 20px; font-size: 18px; cursor: pointer;
       background: #333; color: white; border: 1px solid #555;
     }
-
-    #lobby { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
     #players { margin-top: 20px; font-size: 18px; }
-    #startBtn {
-      margin-top: 30px; padding: 10px 20px; font-size: 20px; cursor: pointer;
-      background: #333; color: white; border: 1px solid #555;
-    }
-
     #canvasWrap { display: none; }
     #hp, #coins {
       position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.6);
@@ -35,21 +23,21 @@
   </style>
 </head>
 <body>
-  <!-- ✅ 1️⃣ 아이디 입력창 -->
+  <!-- 아이디 입력 -->
   <div id="join">
     <h1>⚔️ 슈팅 배틀 3인 멀티</h1>
     <input id="nickname" placeholder="닉네임을 입력하세요" maxlength="12" />
     <button id="joinBtn">입장하기</button>
   </div>
 
-  <!-- ✅ 2️⃣ 로비 -->
-  <div id="lobby">
+  <!-- 로비 -->
+  <div id="lobby" style="display:none;">
     <h2>대기실</h2>
     <div id="players"></div>
-    <button id="startBtn" style="display:none;">게임 시작</button>
+    <button id="startBtn">게임 시작</button>
   </div>
 
-  <!-- ✅ 3️⃣ 게임 영역 -->
+  <!-- 게임 -->
   <div id="canvasWrap">
     <div id="hp"></div>
     <div id="coins"></div>
@@ -58,8 +46,6 @@
 
   <script>
     const socket = new WebSocket("wss://side2.onrender.com");
-
-    // HTML 요소
     const joinDiv = document.getElementById("join");
     const nicknameInput = document.getElementById("nickname");
     const joinBtn = document.getElementById("joinBtn");
@@ -69,7 +55,6 @@
     const canvasWrap = document.getElementById("canvasWrap");
     const hpEl = document.getElementById("hp");
     const coinEl = document.getElementById("coins");
-
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
     canvas.width = innerWidth;
@@ -81,18 +66,17 @@
     let bullets = [];
     let coins = [];
     let inGame = false;
+    let velX = 0, velY = 0;
+
+    const accel = 0.25, maxSpeed = 3.5, friction = 0.08;
 
     const keys = {};
     let mouseX = 0, mouseY = 0;
 
-    window.addEventListener("keydown", e => {
-      keys[e.key.toLowerCase()] = true;
-      if (e.code === "Space" && inGame) shoot();
-    });
+    window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; if (e.code === "Space" && inGame) shoot(); });
     window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
     window.addEventListener("mousemove", e => { mouseX = e.clientX; mouseY = e.clientY; });
 
-    // ✅ 입장 버튼 클릭
     joinBtn.onclick = () => {
       const name = nicknameInput.value.trim();
       if (!name) return alert("닉네임을 입력하세요!");
@@ -109,11 +93,14 @@
       if (data.type === "full") alert("방이 가득 찼습니다.");
 
       if (data.type === "lobby") {
-        playersDiv.innerHTML = data.players
-          .map(p => `<div style="color:${p.color}">${p.name} (${p.id})</div>`)
-          .join("");
-        // ✅ 한 명 이상 있으면 누구나 시작 가능
-        if (data.players.length > 0) startBtn.style.display = "block";
+        const filled = data.players.length;
+        let slots = "";
+        for (let i = 0; i < 3; i++) {
+          const p = data.players[i];
+          if (p) slots += `<div style="color:${p.color}">슬롯 ${i+1}: ${p.name}</div>`;
+          else slots += `<div style="color:gray">슬롯 ${i+1}: (빈자리)</div>`;
+        }
+        playersDiv.innerHTML = slots;
       }
 
       if (data.type === "start") {
@@ -133,9 +120,7 @@
       }
     };
 
-    startBtn.onclick = () => {
-      socket.send(JSON.stringify({ type: "start" }));
-    };
+    startBtn.onclick = () => socket.send(JSON.stringify({ type: "start" }));
 
     function generateCoins() {
       coins = [];
@@ -144,12 +129,25 @@
       }
     }
 
+    // 관성 이동
     function movePlayer() {
-      const spd = 3;
-      if (keys['w']) player.y -= spd;
-      if (keys['s']) player.y += spd;
-      if (keys['a']) player.x -= spd;
-      if (keys['d']) player.x += spd;
+      if (keys['w']) velY -= accel;
+      if (keys['s']) velY += accel;
+      if (keys['a']) velX -= accel;
+      if (keys['d']) velX += accel;
+
+      const speed = Math.hypot(velX, velY);
+      if (speed > maxSpeed) {
+        velX = (velX / speed) * maxSpeed;
+        velY = (velY / speed) * maxSpeed;
+      }
+
+      velX *= (1 - friction);
+      velY *= (1 - friction);
+
+      player.x += velX;
+      player.y += velY;
+
       player.x = Math.max(0, Math.min(MAP_SIZE, player.x));
       player.y = Math.max(0, Math.min(MAP_SIZE, player.y));
     }
@@ -158,27 +156,18 @@
       const dx = mouseX - canvas.width / 2;
       const dy = mouseY - canvas.height / 2;
       const len = Math.hypot(dx, dy);
-      bullets.push({
-        owner: player.id,
-        x: player.x,
-        y: player.y,
-        dx: (dx / len) * 8,
-        dy: (dy / len) * 8,
-        color: player.color
-      });
+      bullets.push({ owner: player.id, x: player.x, y: player.y, dx: (dx / len) * 8, dy: (dy / len) * 8, color: player.color });
       sendState();
     }
 
     function sendState() {
-      socket.send(JSON.stringify({
-        type: "state",
-        player, bullets, coins
-      }));
+      socket.send(JSON.stringify({ type: "state", player, bullets, coins }));
     }
 
     function draw() {
       if (!inGame) return requestAnimationFrame(draw);
       movePlayer();
+
       const offsetX = player.x - canvas.width / 2;
       const offsetY = player.y - canvas.height / 2;
 
