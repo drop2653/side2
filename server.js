@@ -1,24 +1,28 @@
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-app.use(express.static("public")); // public 폴더 정적 호스팅
+app.use(express.static(path.join(__dirname, "public")));
 
-// 게임 데이터
-let rooms = []; // [{id: "abc", players: [{id,name,color,ready,hp,coins,x,y}], started: false}]
+let rooms = [];
 
-function getColor(idx) {
-  return ["red", "blue", "green"][idx] || "gray";
+function getColor(i) {
+  return ["red", "blue", "green"][i] || "gray";
 }
 
 function broadcast(roomId, data) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1 && client.roomId === roomId) {
-      client.send(JSON.stringify(data));
+  wss.clients.forEach((c) => {
+    if (c.readyState === 1 && c.roomId === roomId) {
+      c.send(JSON.stringify(data));
     }
   });
 }
@@ -27,21 +31,17 @@ wss.on("connection", (ws) => {
   ws.on("message", (msg) => {
     const data = JSON.parse(msg);
 
-    // 아이디 입력 후 방 입장
+    // 플레이어 입장
     if (data.type === "join") {
       let room = rooms.find((r) => !r.started && r.players.length < 3);
       if (!room) {
-        if (rooms.length >= 5) {
-          ws.send(JSON.stringify({ type: "error", msg: "빈 방 없음!" }));
-          return;
-        }
         room = { id: Math.random().toString(36).substr(2, 5), players: [], started: false };
         rooms.push(room);
       }
 
       const color = getColor(room.players.length);
       const player = {
-        id: ws._socket.remoteAddress + Math.random(),
+        id: Date.now() + Math.random(),
         name: data.name,
         color,
         ready: false,
@@ -51,6 +51,7 @@ wss.on("connection", (ws) => {
         y: 0,
       };
       room.players.push(player);
+
       ws.roomId = room.id;
       ws.playerId = player.id;
 
@@ -68,21 +69,18 @@ wss.on("connection", (ws) => {
     // 시작
     if (data.type === "start") {
       const room = rooms.find((r) => r.id === ws.roomId);
-      if (room) {
-        room.started = true;
-        broadcast(room.id, { type: "gameStart", room });
-      }
+      if (!room) return;
+      room.started = true;
+      broadcast(room.id, { type: "gameStart", room });
     }
 
-    // 플레이어 상태 업데이트(이동/HP/코인)
+    // 이동 업데이트
     if (data.type === "update") {
       const room = rooms.find((r) => r.id === ws.roomId);
       if (!room) return;
       const p = room.players.find((pl) => pl.id === ws.playerId);
-      if (p) {
-        Object.assign(p, data.payload);
-        broadcast(room.id, { type: "state", room });
-      }
+      if (p) Object.assign(p, data.payload);
+      broadcast(room.id, { type: "state", room });
     }
   });
 
@@ -99,7 +97,8 @@ wss.on("connection", (ws) => {
 });
 
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`Server running on ${PORT}`));
+server.listen(PORT, () => console.log("✅ Server on port", PORT));
+
 
 
 
