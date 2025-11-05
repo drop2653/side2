@@ -2,19 +2,30 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>⚔️ 3인 슈팅 배틀</title>
+  <title>⚔️ 슈팅 배틀 3인 멀티</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: sans-serif; }
-    #lobby {
+    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: sans-serif; text-align: center; }
+
+    #join {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       height: 100vh;
     }
+    #join input {
+      padding: 10px; font-size: 18px; border: none; border-radius: 4px; width: 250px; text-align: center;
+    }
+    #join button {
+      margin-top: 15px; padding: 10px 20px; font-size: 18px; cursor: pointer;
+      background: #333; color: white; border: 1px solid #555;
+    }
+
+    #lobby { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
     #players { margin-top: 20px; font-size: 18px; }
     #startBtn {
       margin-top: 30px; padding: 10px 20px; font-size: 20px; cursor: pointer;
       background: #333; color: white; border: 1px solid #555;
     }
-    #gameUI, #canvasWrap { display: none; }
+
+    #canvasWrap { display: none; }
     #hp, #coins {
       position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.6);
       padding: 5px 10px; border-radius: 5px;
@@ -24,13 +35,21 @@
   </style>
 </head>
 <body>
+  <!-- ✅ 1️⃣ 아이디 입력창 -->
+  <div id="join">
+    <h1>⚔️ 슈팅 배틀 3인 멀티</h1>
+    <input id="nickname" placeholder="닉네임을 입력하세요" maxlength="12" />
+    <button id="joinBtn">입장하기</button>
+  </div>
+
+  <!-- ✅ 2️⃣ 로비 -->
   <div id="lobby">
-    <h1>⚔️ 3인 슈팅 배틀</h1>
-    <p>플레이어들이 입장할 때까지 기다리세요...</p>
+    <h2>대기실</h2>
     <div id="players"></div>
     <button id="startBtn" style="display:none;">게임 시작</button>
   </div>
 
+  <!-- ✅ 3️⃣ 게임 영역 -->
   <div id="canvasWrap">
     <div id="hp"></div>
     <div id="coins"></div>
@@ -39,25 +58,29 @@
 
   <script>
     const socket = new WebSocket("wss://side2.onrender.com");
-    let player = {};
-    let others = {};
-    let bullets = [];
-    let coins = [];
-    const MAP_SIZE = 2000;
-    const COIN_COUNT = 50;
-    let inGame = false;
 
-    const lobby = document.getElementById("lobby");
+    // HTML 요소
+    const joinDiv = document.getElementById("join");
+    const nicknameInput = document.getElementById("nickname");
+    const joinBtn = document.getElementById("joinBtn");
+    const lobbyDiv = document.getElementById("lobby");
     const playersDiv = document.getElementById("players");
     const startBtn = document.getElementById("startBtn");
     const canvasWrap = document.getElementById("canvasWrap");
+    const hpEl = document.getElementById("hp");
+    const coinEl = document.getElementById("coins");
+
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
     canvas.width = innerWidth;
     canvas.height = innerHeight;
 
-    const hpEl = document.getElementById("hp");
-    const coinEl = document.getElementById("coins");
+    const MAP_SIZE = 2000, COIN_COUNT = 50;
+    let player = {};
+    let others = {};
+    let bullets = [];
+    let coins = [];
+    let inGame = false;
 
     const keys = {};
     let mouseX = 0, mouseY = 0;
@@ -69,27 +92,32 @@
     window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
     window.addEventListener("mousemove", e => { mouseX = e.clientX; mouseY = e.clientY; });
 
-    function generateCoins() {
-      coins = [];
-      for (let i = 0; i < COIN_COUNT; i++) {
-        coins.push({ id: i, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE, collected: false });
-      }
-    }
+    // ✅ 입장 버튼 클릭
+    joinBtn.onclick = () => {
+      const name = nicknameInput.value.trim();
+      if (!name) return alert("닉네임을 입력하세요!");
+      player.id = Math.random().toString(36).substr(2, 9);
+      player.name = name;
+      socket.send(JSON.stringify({ type: "join", id: player.id, name }));
+      joinDiv.style.display = "none";
+      lobbyDiv.style.display = "flex";
+    };
 
     socket.onmessage = e => {
       const data = JSON.parse(e.data);
 
-      if (data.type === "full") {
-        alert("방이 가득 찼습니다!");
-      }
+      if (data.type === "full") alert("방이 가득 찼습니다.");
 
       if (data.type === "lobby") {
-        playersDiv.innerHTML = data.players.map(p => `<div style="color:${p.color}">${p.id}</div>`).join("");
-        if (data.players.length > 0 && data.players[0].id === player.id) startBtn.style.display = "block";
+        playersDiv.innerHTML = data.players
+          .map(p => `<div style="color:${p.color}">${p.name} (${p.id})</div>`)
+          .join("");
+        // ✅ 한 명 이상 있으면 누구나 시작 가능
+        if (data.players.length > 0) startBtn.style.display = "block";
       }
 
       if (data.type === "start") {
-        lobby.style.display = "none";
+        lobbyDiv.style.display = "none";
         canvasWrap.style.display = "block";
         inGame = true;
         generateCoins();
@@ -109,10 +137,12 @@
       socket.send(JSON.stringify({ type: "start" }));
     };
 
-    socket.onopen = () => {
-      console.log("✅ 서버 연결됨");
-      player.id = Math.random().toString(36).substr(2, 9);
-    };
+    function generateCoins() {
+      coins = [];
+      for (let i = 0; i < COIN_COUNT; i++) {
+        coins.push({ id: i, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE, collected: false });
+      }
+    }
 
     function movePlayer() {
       const spd = 5;
@@ -146,26 +176,19 @@
       }));
     }
 
-    function distance(ax, ay, bx, by) {
-      return Math.hypot(ax - bx, ay - by);
-    }
-
     function draw() {
       if (!inGame) return requestAnimationFrame(draw);
       movePlayer();
-
       const offsetX = player.x - canvas.width / 2;
       const offsetY = player.y - canvas.height / 2;
 
       ctx.fillStyle = "#111";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 테두리
       ctx.strokeStyle = "lime";
       ctx.lineWidth = 10;
       ctx.strokeRect(-offsetX, -offsetY, MAP_SIZE, MAP_SIZE);
 
-      // 코인
       for (let c of coins) {
         if (!c.collected) {
           ctx.fillStyle = "yellow";
@@ -175,13 +198,11 @@
         }
       }
 
-      // 내 캐릭터
       ctx.fillStyle = player.color || "red";
       ctx.beginPath();
       ctx.arc(player.x - offsetX, player.y - offsetY, 12, 0, Math.PI * 2);
       ctx.fill();
 
-      // 다른 플레이어
       for (let id in others) {
         const o = others[id];
         ctx.fillStyle = o.color;
@@ -190,7 +211,6 @@
         ctx.fill();
       }
 
-      // 총알
       for (let b of bullets) {
         b.x += b.dx;
         b.y += b.dy;
@@ -201,7 +221,6 @@
       }
 
       bullets = bullets.filter(b => b.x > 0 && b.x < MAP_SIZE && b.y > 0 && b.y < MAP_SIZE);
-
       hpEl.textContent = `❤️ HP: ${player.hp || 10}`;
       coinEl.textContent = `🪙 ${player.coins || 0} / ${COIN_COUNT}`;
 
@@ -213,6 +232,7 @@
   </script>
 </body>
 </html>
+
 
 
 
