@@ -274,3 +274,60 @@ function gameLoop() {
 document.getElementById("restart-button").onclick = () => {
   location.reload(); // 새로고침으로 초기화
 };
+
+// 기존 플레이어 정보 제거
+let players = {};
+let myPlayer = {};
+
+// 서버에서 게임 시작 정보 수신
+socket.on("start-game", (data) => {
+  players = data.players;
+  myPlayer = players[socket.id];
+  coins = data.coins;
+  requestAnimationFrame(gameLoop);
+});
+
+function sendMovement() {
+  socket.emit('move', {
+    x: myPlayer.x,
+    y: myPlayer.y,
+    vx: myPlayer.vx,
+    vy: myPlayer.vy
+  });
+}
+
+function shootBullet() {
+  const angle = Math.atan2(myPlayer.mouseY - myPlayer.y, myPlayer.mouseX - myPlayer.x);
+  const bullet = {
+    x: myPlayer.x,
+    y: myPlayer.y,
+    vx: Math.cos(angle) * 8,
+    vy: Math.sin(angle) * 8,
+    color: myPlayer.color
+  };
+  bullets.push(bullet);
+  socket.emit('shoot', bullet);
+}
+
+// 서버에서 모든 상태 수신
+socket.on('game-state', (state) => {
+  players = state.players;
+  bullets = state.bullets;
+  coins = state.coins;
+});
+
+// 이동 시 서버에 보냄
+function updatePlayerMovement() {
+  const accel = 0.3;
+  if (keys["w"]) myPlayer.vy -= accel;
+  if (keys["s"]) myPlayer.vy += accel;
+  if (keys["a"]) myPlayer.vx -= accel;
+  if (keys["d"]) myPlayer.vx += accel;
+  myPlayer.vx *= 0.9;
+  myPlayer.vy *= 0.9;
+  myPlayer.x += myPlayer.vx;
+  myPlayer.y += myPlayer.vy;
+
+  sendMovement(); // 서버에 위치 전송
+}
+
