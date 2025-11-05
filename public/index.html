@@ -139,15 +139,21 @@
     }
 
     function updateLobby(room) {
-      const slots = [slot1, slot2, slot3, slot4];
-      slots.forEach(s => { s.innerHTML = ""; });
-      room.players.forEach((p, i) => {
-        let color = p.color || "white";
-        slots[i].innerHTML = `<b style="color:${color}">${p.nickname}</b>` +
-          (p.ready ? `<div class='ready'>준비중...</div>` : "");
-      });
-      document.getElementById("startBtn").style.display = room.isHost ? "inline-block" : "none";
-    }
+  const slots = [slot1, slot2, slot3, slot4];
+  slots.forEach(s => { s.innerHTML = ""; });
+
+  room.players.forEach((p, i) => {
+    let color = p.color || "white";
+    let label = p.nickname;
+    if (p.isHost) label += " 👑";  // ✅ 방장 표시
+    slots[i].innerHTML = `<b style="color:${color}">${label}</b>` +
+      (p.ready ? `<div class='ready'>준비중...</div>` : "");
+  });
+
+  // ✅ 내가 방장인지 확인해서 버튼 보이기
+  const myInfo = room.players.find(p => p.nickname === nickname);
+  document.getElementById("startBtn").style.display = myInfo?.isHost ? "inline-block" : "none";
+}
 
     // ⚙️ 준비 & 시작
     document.getElementById("readyBtn").onclick = () => {
@@ -226,6 +232,7 @@
   </script>
 </body>
 </html>
+
 
 
 
