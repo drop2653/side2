@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>슈팅 시뮬레이터</title>
   <style>
-    body { margin: 0; text-align: center; background: #222; color: white; }
-    canvas { background: #333; margin-top: 20px; border-radius: 50%; }
-    #ui { margin-top: 20px; }
-    #players div { margin: 5px; padding: 5px; border: 1px solid white; width: 200px; margin: auto; }
+    body { background:#222; color:#fff; text-align:center; font-family:sans-serif; }
+    #game { background:#333; display:none; margin:20px auto; border-radius:50%; }
+    #lobby,#ui { margin-top:20px; }
+    #players div{margin:5px;padding:5px;border:1px solid #fff;width:200px;margin:auto;}
   </style>
 </head>
 <body>
@@ -17,70 +17,72 @@
     <button id="joinBtn">대기방 입장</button>
     <div id="msg"></div>
   </div>
-  <div id="lobby" style="display:none">
+  <div id="lobby" style="display:none;">
     <h3>대기방</h3>
     <div id="players"></div>
     <button id="readyBtn">게임 준비</button>
-    <button id="startBtn" style="display:none">게임 시작</button>
+    <button id="startBtn" style="display:none;">게임 시작</button>
   </div>
-  <canvas id="game" width="800" height="800" style="display:none"></canvas>
+  <canvas id="game" width="800" height="800"></canvas>
 
   <script>
-    const ws = new WebSocket(location.origin.replace(/^http/, "ws"));
-    let myColor = null;
-    let myName = null;
-    let room = null;
+    const WS_URL =
+      location.origin.replace(/^http/, "ws"); // Render용
+    const ws = new WebSocket(WS_URL);
+
+    let myName, myColor, room;
+    const msg = document.getElementById("msg");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
-    const msg = document.getElementById("msg");
 
+    // --- UI ---
     document.getElementById("joinBtn").onclick = () => {
       myName = document.getElementById("nameInput").value.trim();
       if (!myName) return alert("아이디를 입력하세요!");
       ws.send(JSON.stringify({ type: "join", name: myName }));
     };
 
-    document.getElementById("readyBtn").onclick = () => {
-      ws.send(JSON.stringify({ type: "ready" }));
-    };
-
-    document.getElementById("startBtn").onclick = () => {
-      ws.send(JSON.stringify({ type: "start" }));
-    };
+    document.getElementById("readyBtn").onclick = () => ws.send(JSON.stringify({ type: "ready" }));
+    document.getElementById("startBtn").onclick = () => ws.send(JSON.stringify({ type: "start" }));
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.type === "error") msg.innerText = data.msg;
+      if (data.type === "error") return (msg.innerText = data.msg);
       if (data.type === "roomUpdate") {
         room = data.room;
         document.getElementById("ui").style.display = "none";
         document.getElementById("lobby").style.display = "block";
-        const playersDiv = document.getElementById("players");
-        playersDiv.innerHTML = "";
+        const list = document.getElementById("players");
+        list.innerHTML = "";
         data.room.players.forEach((p, i) => {
           const div = document.createElement("div");
           div.style.color = p.color;
           div.textContent = `${p.name} ${p.ready ? "(준비중...)" : ""}`;
-          playersDiv.appendChild(div);
+          list.appendChild(div);
           if (p.name === myName) myColor = p.color;
         });
         const isHost = data.room.players[0]?.name === myName;
         document.getElementById("startBtn").style.display = isHost ? "block" : "none";
       }
       if (data.type === "gameStart") {
-        room = data.room;
         document.getElementById("lobby").style.display = "none";
         canvas.style.display = "block";
         startGame();
       }
+      if (data.type === "state") {
+        drawPlayers(data.room.players);
+      }
     };
 
-    // 단순 2D 슈팅 로직 (로컬)
+    // --- Game logic ---
     const keys = {};
-    window.addEventListener("keydown", (e) => (keys[e.key] = true));
-    window.addEventListener("keyup", (e) => (keys[e.key] = false));
+    addEventListener("keydown", (e) => (keys[e.key] = true));
+    addEventListener("keyup", (e) => (keys[e.key] = false));
 
-    let x = 400, y = 400, vx = 0, vy = 0;
+    let x = 400,
+      y = 400,
+      vx = 0,
+      vy = 0;
 
     function startGame() {
       setInterval(() => {
@@ -89,19 +91,29 @@
         if (keys.s) vy += speed;
         if (keys.a) vx -= speed;
         if (keys.d) vx += speed;
-        vx *= 0.95; vy *= 0.95;
-        x += vx; y += vy;
-        ctx.clearRect(0, 0, 800, 800);
-        ctx.beginPath();
-        ctx.arc(x, y, 20, 0, Math.PI * 2);
-        ctx.fillStyle = myColor;
-        ctx.fill();
+        vx *= 0.9;
+        vy *= 0.9;
+        x += vx;
+        y += vy;
         ws.send(JSON.stringify({ type: "update", payload: { x, y } }));
       }, 30);
+    }
+
+    function drawPlayers(players) {
+      ctx.clearRect(0, 0, 800, 800);
+      players.forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p.x || 400, p.y || 400, 20, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.fillText(p.name, (p.x || 400) - 15, (p.y || 400) - 30);
+      });
     }
   </script>
 </body>
 </html>
+
 
 
 
