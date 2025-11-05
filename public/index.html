@@ -103,12 +103,12 @@
         playersDiv.innerHTML = slots;
       }
 
-      if (data.type === "start") {
-        lobbyDiv.style.display = "none";
-        canvasWrap.style.display = "block";
-        inGame = true;
-        generateCoins();
-      }
+if (data.type === "start") {
+  lobbyDiv.style.display = "none";
+  canvasWrap.style.display = "block";
+  inGame = true;
+  generateCoins();
+}
 
       if (data.type === "state" && inGame) {
         others = {};
@@ -120,7 +120,10 @@
       }
     };
 
-    startBtn.onclick = () => socket.send(JSON.stringify({ type: "start" }));
+    startBtn.onclick = () => {
+  socket.send(JSON.stringify({ type: "start" }));
+  console.log("Start sent");
+};
 
     function generateCoins() {
       coins = [];
@@ -221,6 +224,7 @@
   </script>
 </body>
 </html>
+
 
 
 
