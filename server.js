@@ -5,69 +5,77 @@ const http = require('http');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
 app.use(express.static('public'));
 
-let rooms = {}; // { roomId: { players: [], started: false } }
+let rooms = { main: { players: [], started: false } };
 
 wss.on('connection', ws => {
-  const id = Math.random().toString(36).substr(2, 9);
-  const roomId = 'main'; // 단일 방
-  if (!rooms[roomId]) rooms[roomId] = { players: [], started: false };
-
-  const playerCount = rooms[roomId].players.length;
-
-  if (playerCount >= 3) {
-    ws.send(JSON.stringify({ type: 'full' }));
-    ws.close();
-    return;
-  }
-
-  const colors = ['red', 'blue', 'green'];
-  const player = {
-    id,
-    color: colors[playerCount],
-    x: Math.random() * 2000,
-    y: Math.random() * 2000,
-    hp: 10,
-    coins: 0,
-    alive: true
-  };
-
-  rooms[roomId].players.push(player);
-
-  ws.roomId = roomId;
-  ws.player = player;
-
-  // 연결 알림
-  broadcast(roomId, {
-    type: 'lobby',
-    players: rooms[roomId].players.map(p => ({ id: p.id, color: p.color })),
-  });
-
   ws.on('message', msg => {
     const data = JSON.parse(msg);
 
-    if (data.type === 'state') {
-      ws.player = { ...ws.player, ...data.player };
+    if (data.type === 'join') {
+      const roomId = 'main';
+      const room = rooms[roomId];
+
+      if (room.players.length >= 3) {
+        ws.send(JSON.stringify({ type: 'full' }));
+        ws.close();
+        return;
+      }
+
+      const colors = ['red', 'blue', 'green'];
+      const player = {
+        id: data.id,
+        name: data.name,
+        color: colors[room.players.length],
+        x: Math.random() * 2000,
+        y: Math.random() * 2000,
+        hp: 10,
+        coins: 0,
+        alive: true
+      };
+
+      room.players.push(player);
+      ws.roomId = roomId;
+      ws.player = player;
+
       broadcast(roomId, {
-        type: 'state',
-        players: rooms[roomId].players.map(p => p),
-        bullets: data.bullets,
-        coins: data.coins
+        type: 'lobby',
+        players: room.players.map(p => ({
+          id: p.id,
+          name: p.name,
+          color: p.color
+        }))
       });
     }
 
     if (data.type === 'start') {
-      rooms[roomId].started = true;
-      broadcast(roomId, { type: 'start' });
+      broadcast('main', { type: 'start' });
+    }
+
+    if (data.type === 'state') {
+      ws.player = { ...ws.player, ...data.player };
+      broadcast('main', {
+        type: 'state',
+        players: rooms.main.players,
+        bullets: data.bullets,
+        coins: data.coins
+      });
     }
   });
 
   ws.on('close', () => {
-    rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== id);
-    broadcast(roomId, {
+    const room = rooms.main;
+    if (!ws.player) return;
+    room.players = room.players.filter(p => p.id !== ws.player.id);
+    broadcast('main', {
       type: 'lobby',
-      players: rooms[roomId].players.map(p => ({ id: p.id, color: p.color }))
+      players: room.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        color: p.color
+      }))
     });
   });
 });
@@ -82,3 +90,4 @@ function broadcast(roomId, data) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
