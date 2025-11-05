@@ -1,194 +1,105 @@
-// server.js
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ✅ app 선언 먼저!
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ✅ 정적 파일 제공 (index.html 등)
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static("public")); // public 폴더 정적 호스팅
 
-// 테스트용 루트 확인
-app.get("/", (req, res) => {
-  res.send("✅ Shooting Simulator WebSocket Server is running!");
-});
+// 게임 데이터
+let rooms = []; // [{id: "abc", players: [{id,name,color,ready,hp,coins,x,y}], started: false}]
 
-// --- 데이터 구조 ---
-let lobby = {
-  players: [],
-  gameStarted: false,
-  coins: [],
-  timeLeft: 180,
-};
-
-// --- 유틸 ---
-function broadcast(data) {
-  const msg = JSON.stringify(data);
-  lobby.players.forEach(p => p.ws.send(msg));
-}
-function randomPos() {
-  const angle = Math.random() * Math.PI * 2;
-  const r = 200 + Math.random() * 80;
-  return {
-    x: 450 + Math.cos(angle) * r,
-    y: 350 + Math.sin(angle) * r,
-  };
-}
-function initCoins() {
-  const arr = [];
-  for (let i = 0; i < 50; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r = 250 * Math.random();
-    arr.push({
-      x: 450 + Math.cos(angle) * r,
-      y: 350 + Math.sin(angle) * r,
-    });
-  }
-  return arr;
+function getColor(idx) {
+  return ["red", "blue", "green"][idx] || "gray";
 }
 
-// --- WebSocket 처리 ---
+function broadcast(roomId, data) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1 && client.roomId === roomId) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
+
 wss.on("connection", (ws) => {
-  const id = Math.random().toString(36).substr(2, 9);
-
   ws.on("message", (msg) => {
     const data = JSON.parse(msg);
 
-    switch (data.type) {
-     case "joinLobby": {
-  if (lobby.gameStarted || lobby.players.length >= 4) {
-    ws.send(JSON.stringify({
-      type: "loginResult",
-      success: false,
-      message: "빈 방 없음!",
-    }));
-    return;
-  }
-const colors = ["red", "blue", "green", "yellow"];
-  const color = colors[lobby.players.length];
-  const newPlayer = {
-    id,
-    nickname: data.nickname,
-    color,
-    ws,
-    ready: false,
-    coins: 0,
-    hp: 5,
-    ...randomPos(),
-  };
-
-  lobby.players.push(newPlayer);
-
-  // ✅ 방장은 항상 첫 번째 플레이어
-  const hostId = lobby.players[0].id;
-
-  // 새로 들어온 사람에게 정보 전송
-  ws.send(JSON.stringify({
-    type: "loginResult",
-    success: true,
-    id,
-    nickname: data.nickname,
-    room: {
-      players: lobby.players.map(p => ({
-        nickname: p.nickname,
-        color: p.color,
-        ready: p.ready,
-        isHost: p.id === hostId,
-      })),
-      hostId,
-    },
-  }));
-
-  // 모든 플레이어에게 로비 업데이트
-  broadcast({
-    type: "lobbyUpdate",
-    room: {
-      players: lobby.players.map(p => ({
-        nickname: p.nickname,
-        color: p.color,
-        ready: p.ready,
-        isHost: p.id === hostId,
-      })),
-      hostId,
-    },
-  });
-  break;
-}
-
-      case "toggleReady": {
-        const p = lobby.players.find(p => p.id === id);
-        if (p) p.ready = !p.ready;
-        broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
-        break;
+    // 아이디 입력 후 방 입장
+    if (data.type === "join") {
+      let room = rooms.find((r) => !r.started && r.players.length < 3);
+      if (!room) {
+        if (rooms.length >= 5) {
+          ws.send(JSON.stringify({ type: "error", msg: "빈 방 없음!" }));
+          return;
+        }
+        room = { id: Math.random().toString(36).substr(2, 5), players: [], started: false };
+        rooms.push(room);
       }
 
-      case "startGame": {
-        if (lobby.players[0]?.id !== id) return;
-        if (!lobby.players.every(p => p.ready)) return;
-        lobby.gameStarted = true;
-        lobby.coins = initCoins();
-        lobby.timeLeft = 180;
+      const color = getColor(room.players.length);
+      const player = {
+        id: ws._socket.remoteAddress + Math.random(),
+        name: data.name,
+        color,
+        ready: false,
+        hp: 5,
+        coins: 0,
+        x: 0,
+        y: 0,
+      };
+      room.players.push(player);
+      ws.roomId = room.id;
+      ws.playerId = player.id;
 
-        broadcast({
-          type: "startGame",
-          players: lobby.players.map(p => ({ id: p.id, color: p.color, x: p.x, y: p.y, hp: p.hp })),
-          coins: lobby.coins,
-        });
+      broadcast(room.id, { type: "roomUpdate", room });
+    }
 
-        startGameLoop();
-        break;
+    // 준비
+    if (data.type === "ready") {
+      const room = rooms.find((r) => r.id === ws.roomId);
+      const p = room?.players.find((pl) => pl.id === ws.playerId);
+      if (p) p.ready = true;
+      broadcast(room.id, { type: "roomUpdate", room });
+    }
+
+    // 시작
+    if (data.type === "start") {
+      const room = rooms.find((r) => r.id === ws.roomId);
+      if (room) {
+        room.started = true;
+        broadcast(room.id, { type: "gameStart", room });
+      }
+    }
+
+    // 플레이어 상태 업데이트(이동/HP/코인)
+    if (data.type === "update") {
+      const room = rooms.find((r) => r.id === ws.roomId);
+      if (!room) return;
+      const p = room.players.find((pl) => pl.id === ws.playerId);
+      if (p) {
+        Object.assign(p, data.payload);
+        broadcast(room.id, { type: "state", room });
       }
     }
   });
 
   ws.on("close", () => {
-    lobby.players = lobby.players.filter(p => p.id !== id);
-    broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
+    const room = rooms.find((r) => r.id === ws.roomId);
+    if (!room) return;
+    room.players = room.players.filter((p) => p.id !== ws.playerId);
+    if (room.players.length === 0) {
+      rooms = rooms.filter((r) => r.id !== room.id);
+    } else {
+      broadcast(room.id, { type: "roomUpdate", room });
+    }
   });
 });
 
-// --- 게임 루프 ---
-let gameInterval = null;
-function startGameLoop() {
-  clearInterval(gameInterval);
-  gameInterval = setInterval(() => {
-    if (!lobby.gameStarted) return;
-    lobby.timeLeft--;
-
-    if (lobby.timeLeft <= 0) endGame();
-
-    broadcast({
-      type: "gameState",
-      players: lobby.players.map(p => ({
-        id: p.id, x: p.x, y: p.y, color: p.color, hp: p.hp, coins: p.coins
-      })),
-      coins: lobby.coins,
-      time: lobby.timeLeft,
-    });
-  }, 1000);
-}
-
-function endGame() {
-  clearInterval(gameInterval);
-  lobby.gameStarted = false;
-  const result = lobby.players
-    .map(p => ({ nickname: p.nickname, coins: p.coins }))
-    .sort((a, b) => b.coins - a.coins);
-  broadcast({ type: "gameOver", result });
-  lobby.players.forEach(p => { p.ready = false; p.coins = 0; p.hp = 5; });
-}
-
-// --- 서버 실행 ---
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
 
 
