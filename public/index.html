@@ -89,6 +89,7 @@
 
     socket.onmessage = e => {
       const data = JSON.parse(e.data);
+        console.log("📩 Received:", data.type); // 👈 이거 추가
 
       if (data.type === "full") alert("방이 가득 찼습니다.");
 
@@ -224,6 +225,7 @@ if (data.type === "start") {
   </script>
 </body>
 </html>
+
 
 
 
