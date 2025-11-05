@@ -45,8 +45,11 @@ wss.on('connection', ws => {
     }
 
 if (data.type === 'start') {
-  console.log("🎮 Start signal received!");
+  console.log(`🎮 Start signal received from ${ws.player?.name || ws.player?.id}`);
   broadcast('main', { type: 'start' });
+
+  // ✅ 방장(또는 단독 플레이어)에게 즉시 확인 응답
+  ws.send(JSON.stringify({ type: 'start' }));
 }
 
     if (data.type === 'state') {
@@ -81,5 +84,6 @@ function broadcast(roomId, data) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
 
