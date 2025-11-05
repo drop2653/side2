@@ -1,3 +1,11 @@
+import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// HTML, JS, CSS 파일을 함께 제공
+app.use(express.static(path.join(__dirname, "public")));
+
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
@@ -156,6 +164,7 @@ function endGame() {
 // --- 서버 실행 ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
 
 
