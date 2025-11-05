@@ -2,229 +2,127 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>⚔️ 슈팅 배틀 3인 멀티</title>
+  <title>슈팅 시뮬레이터</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: sans-serif; text-align: center; }
-
-    #join, #lobby { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-    #join input { padding: 10px; font-size: 18px; border: none; border-radius: 4px; width: 250px; text-align: center; }
-    #join button, #startBtn {
-      margin-top: 15px; padding: 10px 20px; font-size: 18px; cursor: pointer;
-      background: #333; color: white; border: 1px solid #555;
+    body {
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      overflow: hidden;
     }
-    #players { margin-top: 20px; font-size: 18px; }
-    #canvasWrap { display: none; }
-    #hp, #coins {
-      position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.6);
-      padding: 5px 10px; border-radius: 5px;
+    .screen { display: none; height: 100vh; align-items: center; justify-content: center; flex-direction: column; }
+    #login, #lobby, #game { display: flex; }
+    input, button {
+      font-size: 18px;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      margin: 5px;
     }
-    #coins { top: 50px; }
-    canvas { display: block; }
+    button { background: #333; color: white; cursor: pointer; }
+    #slots { display: flex; gap: 20px; margin: 30px; }
+    .slot {
+      width: 150px; height: 150px; background: #222;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px;
+      border: 2px solid #555;
+      flex-direction: column;
+    }
+    .empty { color: #555; }
+    .playerName { margin-top: 5px; font-size: 14px; }
+    #msg { color: #f66; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <!-- 아이디 입력 -->
-  <div id="join">
-    <h1>⚔️ 슈팅 배틀 3인 멀티</h1>
-    <input id="nickname" placeholder="닉네임을 입력하세요" maxlength="12" />
-    <button id="joinBtn">입장하기</button>
+  <!-- 첫 화면 -->
+  <div id="login" class="screen" style="display:flex;">
+    <h1>🎯 슈팅 시뮬레이터</h1>
+    <input id="nickname" placeholder="아이디 입력" />
+    <button id="enterBtn">대기방 입장</button>
+    <div id="msg"></div>
   </div>
 
-  <!-- 로비 -->
-  <div id="lobby" style="display:none;">
-    <h2>대기실</h2>
-    <div id="players"></div>
-    <button id="startBtn">게임 시작</button>
+  <!-- 대기방 -->
+  <div id="lobby" class="screen">
+    <h2>🧩 대기방</h2>
+    <div id="slots"></div>
+    <div>
+      <button id="readyBtn">게임 준비</button>
+      <button id="startBtn" style="display:none;">게임 시작</button>
+    </div>
   </div>
 
-  <!-- 게임 -->
-  <div id="canvasWrap">
-    <div id="hp"></div>
-    <div id="coins"></div>
-    <canvas id="game"></canvas>
+  <!-- 게임화면 (추후 구현) -->
+  <div id="game" class="screen">
+    <h1>⚔️ 게임 시작!</h1>
   </div>
 
   <script>
-    const socket = new WebSocket("wss://side2.onrender.com");
-    const joinDiv = document.getElementById("join");
-    const nicknameInput = document.getElementById("nickname");
-    const joinBtn = document.getElementById("joinBtn");
-    const lobbyDiv = document.getElementById("lobby");
-    const playersDiv = document.getElementById("players");
+    const socket = new WebSocket(location.origin.replace(/^http/, 'ws'));
+
+    const login = document.getElementById("login");
+    const lobby = document.getElementById("lobby");
+    const game = document.getElementById("game");
+    const msg = document.getElementById("msg");
+    const slots = document.getElementById("slots");
+    const enterBtn = document.getElementById("enterBtn");
+    const readyBtn = document.getElementById("readyBtn");
     const startBtn = document.getElementById("startBtn");
-    const canvasWrap = document.getElementById("canvasWrap");
-    const hpEl = document.getElementById("hp");
-    const coinEl = document.getElementById("coins");
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    canvas.width = innerWidth;
-    canvas.height = innerHeight;
+    const nickname = document.getElementById("nickname");
 
-    const MAP_SIZE = 2000, COIN_COUNT = 50;
-    let player = {};
-    let others = {};
-    let bullets = [];
-    let coins = [];
-    let inGame = false;
-    let velX = 0, velY = 0;
+    let playerId = Math.random().toString(36).substr(2, 9);
+    let isHost = false;
 
-    const accel = 0.25, maxSpeed = 3.5, friction = 0.08;
-
-    const keys = {};
-    let mouseX = 0, mouseY = 0;
-
-    window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; if (e.code === "Space" && inGame) shoot(); });
-    window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-    window.addEventListener("mousemove", e => { mouseX = e.clientX; mouseY = e.clientY; });
-
-    joinBtn.onclick = () => {
-      const name = nicknameInput.value.trim();
-      if (!name) return alert("닉네임을 입력하세요!");
-      player.id = Math.random().toString(36).substr(2, 9);
-      player.name = name;
-      socket.send(JSON.stringify({ type: "join", id: player.id, name }));
-      joinDiv.style.display = "none";
-      lobbyDiv.style.display = "flex";
+    enterBtn.onclick = () => {
+      if (!nickname.value.trim()) return msg.textContent = "아이디를 입력하세요!";
+      socket.send(JSON.stringify({ type: "join", id: playerId, name: nickname.value }));
     };
 
-    socket.onmessage = e => {
+    readyBtn.onclick = () => socket.send(JSON.stringify({ type: "ready" }));
+    startBtn.onclick = () => socket.send(JSON.stringify({ type: "start" }));
+
+    socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
-        console.log("📩 Received:", data.type); // 👈 이거 추가
 
-      if (data.type === "full") alert("방이 가득 찼습니다.");
-
-      if (data.type === "lobby") {
-        const filled = data.players.length;
-        let slots = "";
-        for (let i = 0; i < 3; i++) {
-          const p = data.players[i];
-          if (p) slots += `<div style="color:${p.color}">슬롯 ${i+1}: ${p.name}</div>`;
-          else slots += `<div style="color:gray">슬롯 ${i+1}: (빈자리)</div>`;
-        }
-        playersDiv.innerHTML = slots;
+      if (data.type === "lobbyUpdate") {
+        showLobby(data.players, data.host);
       }
 
-if (data.type === "start") {
-  lobbyDiv.style.display = "none";
-  canvasWrap.style.display = "block";
-  inGame = true;
-  generateCoins();
-}
-
-      if (data.type === "state" && inGame) {
-        others = {};
-        for (let p of data.players) {
-          if (p.id !== player.id) others[p.id] = p;
-          else player.color = p.color;
-        }
-        coins = data.coins;
+      if (data.type === "gameStart") {
+        showScreen(game);
       }
     };
 
-    startBtn.onclick = () => {
-  socket.send(JSON.stringify({ type: "start" }));
-  console.log("Start sent");
-};
-
-    function generateCoins() {
-      coins = [];
-      for (let i = 0; i < COIN_COUNT; i++) {
-        coins.push({ id: i, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE, collected: false });
-      }
-    }
-
-    // 관성 이동
-    function movePlayer() {
-      if (keys['w']) velY -= accel;
-      if (keys['s']) velY += accel;
-      if (keys['a']) velX -= accel;
-      if (keys['d']) velX += accel;
-
-      const speed = Math.hypot(velX, velY);
-      if (speed > maxSpeed) {
-        velX = (velX / speed) * maxSpeed;
-        velY = (velY / speed) * maxSpeed;
-      }
-
-      velX *= (1 - friction);
-      velY *= (1 - friction);
-
-      player.x += velX;
-      player.y += velY;
-
-      player.x = Math.max(0, Math.min(MAP_SIZE, player.x));
-      player.y = Math.max(0, Math.min(MAP_SIZE, player.y));
-    }
-
-    function shoot() {
-      const dx = mouseX - canvas.width / 2;
-      const dy = mouseY - canvas.height / 2;
-      const len = Math.hypot(dx, dy);
-      bullets.push({ owner: player.id, x: player.x, y: player.y, dx: (dx / len) * 8, dy: (dy / len) * 8, color: player.color });
-      sendState();
-    }
-
-    function sendState() {
-      socket.send(JSON.stringify({ type: "state", player, bullets, coins }));
-    }
-
-    function draw() {
-      if (!inGame) return requestAnimationFrame(draw);
-      movePlayer();
-
-      const offsetX = player.x - canvas.width / 2;
-      const offsetY = player.y - canvas.height / 2;
-
-      ctx.fillStyle = "#111";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.strokeStyle = "lime";
-      ctx.lineWidth = 10;
-      ctx.strokeRect(-offsetX, -offsetY, MAP_SIZE, MAP_SIZE);
-
-      for (let c of coins) {
-        if (!c.collected) {
-          ctx.fillStyle = "yellow";
-          ctx.beginPath();
-          ctx.arc(c.x - offsetX, c.y - offsetY, 6, 0, Math.PI * 2);
-          ctx.fill();
+    function showLobby(players, hostId) {
+      showScreen(lobby);
+      slots.innerHTML = "";
+      for (let i = 0; i < 3; i++) {
+        const p = players[i];
+        const div = document.createElement("div");
+        div.className = "slot";
+        if (p) {
+          div.style.borderColor = p.color;
+          div.innerHTML = `<div style="color:${p.color};">${p.name}${p.isHost ? " 👑" : ""}</div>`;
+        } else {
+          div.innerHTML = `<div class="empty">(빈 자리)</div>`;
         }
+        slots.appendChild(div);
       }
-
-      ctx.fillStyle = player.color || "red";
-      ctx.beginPath();
-      ctx.arc(player.x - offsetX, player.y - offsetY, 12, 0, Math.PI * 2);
-      ctx.fill();
-
-      for (let id in others) {
-        const o = others[id];
-        ctx.fillStyle = o.color;
-        ctx.beginPath();
-        ctx.arc(o.x - offsetX, o.y - offsetY, 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      for (let b of bullets) {
-        b.x += b.dx;
-        b.y += b.dy;
-        ctx.fillStyle = b.color;
-        ctx.beginPath();
-        ctx.arc(b.x - offsetX, b.y - offsetY, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      bullets = bullets.filter(b => b.x > 0 && b.x < MAP_SIZE && b.y > 0 && b.y < MAP_SIZE);
-      hpEl.textContent = `❤️ HP: ${player.hp || 10}`;
-      coinEl.textContent = `🪙 ${player.coins || 0} / ${COIN_COUNT}`;
-
-      sendState();
-      requestAnimationFrame(draw);
+      const me = players.find(p => p.id === playerId);
+      isHost = me?.isHost;
+      startBtn.style.display = isHost ? "inline-block" : "none";
     }
 
-    draw();
+    function showScreen(target) {
+      [login, lobby, game].forEach(s => s.style.display = "none");
+      target.style.display = "flex";
+    }
   </script>
 </body>
 </html>
+
 
 
 
