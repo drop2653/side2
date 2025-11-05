@@ -44,9 +44,10 @@ wss.on('connection', ws => {
       });
     }
 
-    if (data.type === 'start') {
-      broadcast('main', { type: 'start' });
-    }
+if (data.type === 'start') {
+  console.log("🎮 Start signal received!");
+  broadcast('main', { type: 'start' });
+}
 
     if (data.type === 'state') {
       ws.player = { ...ws.player, ...data.player };
@@ -80,4 +81,5 @@ function broadcast(roomId, data) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
