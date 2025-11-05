@@ -1,80 +1,82 @@
-const WebSocket = require('ws');
-const express = require('express');
-const http = require('http');
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.use(express.static('public'));
+app.use(express.static("public"));
 
-let rooms = { main: { players: [], started: false } };
+let rooms = [];
+let maxPlayers = 4;
 
-wss.on('connection', ws => {
-  ws.on('message', msg => {
+function createRoom() {
+  const id = Math.random().toString(36).substr(2, 6);
+  const room = { id, players: [], started: false };
+  rooms.push(room);
+  return room;
+}
+
+wss.on("connection", (ws) => {
+  ws.on("message", (msg) => {
     const data = JSON.parse(msg);
 
-    if (data.type === 'join') {
-      const room = rooms.main;
-      if (room.players.length >= 3) {
-        ws.send(JSON.stringify({ type: 'full' }));
-        ws.close();
-        return;
-      }
+    // ✅ 방 입장
+    if (data.type === "join") {
+      let room = rooms.find(r => !r.started && r.players.length < maxPlayers);
+      if (!room) room = createRoom();
 
-      const colors = ['red', 'blue', 'green'];
       const player = {
         id: data.id,
         name: data.name,
-        color: colors[room.players.length],
-        x: Math.random() * 2000,
-        y: Math.random() * 2000,
-        hp: 10,
-        coins: 0,
-        alive: true
+        color: ["red", "blue", "green", "purple"][room.players.length],
+        ready: false,
+        isHost: room.players.length === 0
       };
-
-      room.players.push(player);
-      ws.roomId = 'main';
+      ws.roomId = room.id;
       ws.player = player;
+      room.players.push(player);
 
-      broadcast('main', {
-        type: 'lobby',
-        players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color }))
+      broadcast(room.id, {
+        type: "lobbyUpdate",
+        players: room.players,
+        host: room.players.find(p => p.isHost)?.id
       });
     }
 
-if (data.type === 'start') {
-  console.log(`🎮 Start signal received from ${ws.player?.name || ws.player?.id}`);
-    console.log(`🎮 Start signal received from ${ws.player?.name || ws.player?.id}`);
-  broadcast('main', { type: 'start' });
+    // ✅ 준비 토글
+    if (data.type === "ready") {
+      const room = rooms.find(r => r.id === ws.roomId);
+      const p = room.players.find(p => p.id === ws.player.id);
+      if (p) p.ready = !p.ready;
+      broadcast(room.id, { type: "lobbyUpdate", players: room.players });
+    }
 
-  // ✅ 혼자 있는 경우에도 즉시 자기 자신에게 start 전송
-  ws.send(JSON.stringify({ type: 'start' }));
+    // ✅ 강퇴
+    if (data.type === "kick") {
+      const room = rooms.find(r => r.id === ws.roomId);
+      room.players = room.players.filter(p => p.id !== data.targetId);
+      broadcast(room.id, { type: "lobbyUpdate", players: room.players });
+    }
 
-  // ✅ 방장(또는 단독 플레이어)에게 즉시 확인 응답
-  ws.send(JSON.stringify({ type: 'start' }));
-}
-
-    if (data.type === 'state') {
-      ws.player = { ...ws.player, ...data.player };
-      broadcast('main', {
-        type: 'state',
-        players: rooms.main.players,
-        bullets: data.bullets,
-        coins: data.coins
-      });
+    // ✅ 게임 시작
+    if (data.type === "start") {
+      const room = rooms.find(r => r.id === ws.roomId);
+      if (!room) return;
+      const allReady = room.players.every(p => p.ready || p.isHost);
+      if (allReady) {
+        room.started = true;
+        broadcast(room.id, { type: "gameStart", players: room.players });
+      }
     }
   });
 
-  ws.on('close', () => {
-    const room = rooms.main;
-    if (!ws.player) return;
-    room.players = room.players.filter(p => p.id !== ws.player.id);
-    broadcast('main', {
-      type: 'lobby',
-      players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color }))
-    });
+  ws.on("close", () => {
+    const room = rooms.find(r => r.id === ws.roomId);
+    if (!room) return;
+    room.players = room.players.filter(p => p.id !== ws.player?.id);
+    broadcast(room.id, { type: "lobbyUpdate", players: room.players });
   });
 });
 
@@ -88,6 +90,7 @@ function broadcast(roomId, data) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
 
 
