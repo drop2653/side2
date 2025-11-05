@@ -1,23 +1,29 @@
-import path from "path";
-import { fileURLToPath } from "url";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// HTML, JS, CSS 파일을 함께 제공
-app.use(express.static(path.join(__dirname, "public")));
-
+// server.js
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ✅ app 선언 먼저!
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// ✅ 정적 파일 제공 (index.html 등)
+app.use(express.static(path.join(__dirname, "public")));
+
+// 테스트용 루트 확인
+app.get("/", (req, res) => {
+  res.send("✅ Shooting Simulator WebSocket Server is running!");
+});
+
 // --- 데이터 구조 ---
 let lobby = {
-  players: [], // {id, nickname, color, ws, ready, coins, hp, x, y}
-  isHost: false,
+  players: [],
   gameStarted: false,
   coins: [],
   timeLeft: 180,
@@ -49,7 +55,7 @@ function initCoins() {
   return arr;
 }
 
-// --- 연결 시 ---
+// --- WebSocket 처리 ---
 wss.on("connection", (ws) => {
   const id = Math.random().toString(36).substr(2, 9);
 
@@ -81,31 +87,27 @@ wss.on("connection", (ws) => {
         };
 
         lobby.players.push(newPlayer);
-        lobby.isHost = lobby.players[0].id === id;
-
         ws.send(JSON.stringify({
           type: "loginResult",
           success: true,
           id,
           nickname: data.nickname,
-          room: { players: lobby.players, isHost: lobby.isHost },
+          room: { players: lobby.players },
         }));
-        broadcast({ type: "lobbyUpdate", room: { players: lobby.players, isHost: lobby.isHost } });
+        broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
         break;
       }
 
       case "toggleReady": {
         const p = lobby.players.find(p => p.id === id);
         if (p) p.ready = !p.ready;
-        broadcast({ type: "lobbyUpdate", room: { players: lobby.players, isHost: lobby.players[0]?.id === id } });
+        broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
         break;
       }
 
       case "startGame": {
-        const host = lobby.players[0];
-        if (!host || host.id !== id) return;
+        if (lobby.players[0]?.id !== id) return;
         if (!lobby.players.every(p => p.ready)) return;
-
         lobby.gameStarted = true;
         lobby.coins = initCoins();
         lobby.timeLeft = 180;
@@ -124,7 +126,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     lobby.players = lobby.players.filter(p => p.id !== id);
-    broadcast({ type: "lobbyUpdate", room: { players: lobby.players, isHost: lobby.players[0]?.id === id } });
+    broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
   });
 });
 
@@ -136,9 +138,7 @@ function startGameLoop() {
     if (!lobby.gameStarted) return;
     lobby.timeLeft--;
 
-    if (lobby.timeLeft <= 0) {
-      endGame();
-    }
+    if (lobby.timeLeft <= 0) endGame();
 
     broadcast({
       type: "gameState",
@@ -164,6 +164,7 @@ function endGame() {
 // --- 서버 실행 ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
 
 
