@@ -1,0 +1,26 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  background-color: #f4f4f4;
+}
+
+#game-canvas {
+  background: #ddd;
+  border-radius: 50%;
+  margin-top: 20px;
+}
+
+.slot {
+  border: 2px dashed #999;
+  margin: 10px auto;
+  width: 200px;
+  padding: 10px;
+  font-size: 18px;
+  background-color: #fff;
+}
+
+#game-ui {
+  margin-top: 10px;
+  font-size: 24px;
+  font-weight: bold;
+}
