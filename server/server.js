@@ -85,4 +85,99 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`서버 실행 중... 포트: ${PORT}`);
+
 });
+let gameState = {
+  players: {},  // socketId: {x, y, vx, vy, hp, color, coins}
+  bullets: [],
+  coins: [],    // {x, y}
+  started: false,
+};
+
+function spawnCoins() {
+  gameState.coins = [];
+  for (let i = 0; i < 50; i++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const radius = Math.random() * 330;
+    gameState.coins.push({
+      x: 400 + Math.cos(angle) * radius,
+      y: 400 + Math.sin(angle) * radius,
+    });
+  }
+}
+
+io.on('connection', (socket) => {
+  console.log('플레이어 접속:', socket.id);
+
+  socket.on('join-lobby', (nickname) => {
+    if (Object.keys(gameState.players).length >= 3 || gameState.started) {
+      socket.emit('lobby-full');
+      return;
+    }
+
+    const color = ['red', 'blue', 'green'][Object.keys(gameState.players).length];
+    gameState.players[socket.id] = {
+      id: socket.id,
+      nickname,
+      color,
+      x: color === 'red' ? 400 : color === 'blue' ? 200 : 600,
+      y: color === 'red' ? 150 : 600,
+      vx: 0,
+      vy: 0,
+      hp: 5,
+      coins: 0,
+      ready: false
+    };
+
+    io.emit('update-lobby', Object.values(gameState.players));
+  });
+
+  socket.on('ready', () => {
+    if (gameState.players[socket.id]) {
+      gameState.players[socket.id].ready = true;
+      io.emit('update-lobby', Object.values(gameState.players));
+    }
+  });
+
+  socket.on('start-game', () => {
+    const allReady = Object.values(gameState.players).every(p => p.ready || Object.values(gameState.players).length === 1);
+    if (allReady) {
+      gameState.started = true;
+      spawnCoins();
+      io.emit('start-game', {
+        players: gameState.players,
+        coins: gameState.coins
+      });
+    }
+  });
+
+  // 이동 동기화
+  socket.on('move', (data) => {
+    const player = gameState.players[socket.id];
+    if (!player) return;
+    player.x = data.x;
+    player.y = data.y;
+    player.vx = data.vx;
+    player.vy = data.vy;
+  });
+
+  // 총알 동기화
+  socket.on('shoot', (bullet) => {
+    gameState.bullets.push(bullet);
+  });
+
+  socket.on('disconnect', () => {
+    delete gameState.players[socket.id];
+    io.emit('update-lobby', Object.values(gameState.players));
+  });
+});
+
+// 주기적으로 전체 상태 전송
+setInterval(() => {
+  if (!gameState.started) return;
+  io.emit('game-state', {
+    players: gameState.players,
+    bullets: gameState.bullets,
+    coins: gameState.coins
+  });
+}, 1000 / 30); // 30 FPS 동기화
