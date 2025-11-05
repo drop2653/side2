@@ -63,40 +63,65 @@ wss.on("connection", (ws) => {
     const data = JSON.parse(msg);
 
     switch (data.type) {
-      case "joinLobby": {
-        if (lobby.gameStarted || lobby.players.length >= 4) {
-          ws.send(JSON.stringify({
-            type: "loginResult",
-            success: false,
-            message: "빈 방 없음!",
-          }));
-          return;
-        }
+     case "joinLobby": {
+  if (lobby.gameStarted || lobby.players.length >= 4) {
+    ws.send(JSON.stringify({
+      type: "loginResult",
+      success: false,
+      message: "빈 방 없음!",
+    }));
+    return;
+  }
+const colors = ["red", "blue", "green", "yellow"];
+  const color = colors[lobby.players.length];
+  const newPlayer = {
+    id,
+    nickname: data.nickname,
+    color,
+    ws,
+    ready: false,
+    coins: 0,
+    hp: 5,
+    ...randomPos(),
+  };
 
-        const colors = ["red", "blue", "green", "yellow"];
-        const color = colors[lobby.players.length];
-        const newPlayer = {
-          id,
-          nickname: data.nickname,
-          color,
-          ws,
-          ready: false,
-          coins: 0,
-          hp: 5,
-          ...randomPos(),
-        };
+  lobby.players.push(newPlayer);
 
-        lobby.players.push(newPlayer);
-        ws.send(JSON.stringify({
-          type: "loginResult",
-          success: true,
-          id,
-          nickname: data.nickname,
-          room: { players: lobby.players },
-        }));
-        broadcast({ type: "lobbyUpdate", room: { players: lobby.players } });
-        break;
-      }
+  // ✅ 방장은 항상 첫 번째 플레이어
+  const hostId = lobby.players[0].id;
+
+  // 새로 들어온 사람에게 정보 전송
+  ws.send(JSON.stringify({
+    type: "loginResult",
+    success: true,
+    id,
+    nickname: data.nickname,
+    room: {
+      players: lobby.players.map(p => ({
+        nickname: p.nickname,
+        color: p.color,
+        ready: p.ready,
+        isHost: p.id === hostId,
+      })),
+      hostId,
+    },
+  }));
+
+  // 모든 플레이어에게 로비 업데이트
+  broadcast({
+    type: "lobbyUpdate",
+    room: {
+      players: lobby.players.map(p => ({
+        nickname: p.nickname,
+        color: p.color,
+        ready: p.ready,
+        isHost: p.id === hostId,
+      })),
+      hostId,
+    },
+  });
+  break;
+}
 
       case "toggleReady": {
         const p = lobby.players.find(p => p.id === id);
@@ -164,6 +189,7 @@ function endGame() {
 // --- 서버 실행 ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`✅ 서버 실행 중: ${PORT}`));
+
 
 
 
