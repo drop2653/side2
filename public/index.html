@@ -1,51 +1,136 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>슈팅 시뮬레이터</title>
-  <link rel="stylesheet" href="style.css"/>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>슈팅 시뮬레이터</title>
+<link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-  <div id="login-screen">
-    <h1>슈팅 시뮬레이터</h1>
-    <input type="text" id="player-name" placeholder="아이디를 입력하세요"/>
-    <button id="join-button">대기방 입장</button>
-    <p id="error-message"></p>
-  </div>
+<div id="login-screen">
+<h1>슈팅 시뮬레이터</h1>
+<input type="text" id="player-name" placeholder="아이디를 입력하세요"/>
+<button id="join-button">대기방 입장</button>
+<p id="error-message"></p>
+</div>
 
-  <div id="lobby-screen" style="display:none;">
-    <h2>대기방</h2>
-    <div id="player-list">
-      <div class="slot" id="slot-1">빈 슬롯</div>
-      <div class="slot" id="slot-2">빈 슬롯</div>
-      <div class="slot" id="slot-3">빈 슬롯</div>
-    </div>
-    <button id="ready-button" style="display:none;">게임 준비</button>
-    <button id="start-button" style="display:none;">게임 시작</button>
-  </div>
 
-  <div id="game-screen" style="display:none;">
-    <canvas id="game-canvas" width="800" height="800"></canvas>
-    <div id="game-ui">
-      <div id="timer">03:00</div>
-    </div>
-  </div>
+<div id="lobby-screen" style="display:none;">
+<h2>대기방</h2>
+<div id="player-list">
+<div class="slot" id="slot-1">빈 슬롯</div>
+<div class="slot" id="slot-2">빈 슬롯</div>
+<div class="slot" id="slot-3">빈 슬롯</div>
+</div>
+<button id="ready-button" style="display:none;">게임 준비</button>
+<button id="start-button" style="display:none;">게임 시작</button>
+</div>
 
-  <div id="result-screen" style="display:none;">
-    <h2>게임 결과</h2>
-    <ol id="leaderboard"></ol>
-    <button id="restart-button">게임 다시 하기</button>
-  </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="game.js"></script>
+<div id="game-screen" style="display:none;">
+<canvas id="game-canvas" width="800" height="800"></canvas>
+<div id="game-ui">
+<div id="timer">03:00</div>
+</div>
+</div>
+
+
+<div id="result-screen" style="display:none;">
+<h2>게임 결과</h2>
+<ol id="leaderboard"></ol>
+<button id="restart-button">게임 다시 하기</button>
+</div>
+
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+
+
+const loginScreen = document.getElementById('login-screen');
+const lobbyScreen = document.getElementById('lobby-screen');
+const gameScreen = document.getElementById('game-screen');
+const resultScreen = document.getElementById('result-screen');
+
+
+const playerNameInput = document.getElementById('player-name');
+const joinButton = document.getElementById('join-button');
+const errorMessage = document.getElementById('error-message');
+
+
+const slot1 = document.getElementById('slot-1');
+const slot2 = document.getElementById('slot-2');
+const slot3 = document.getElementById('slot-3');
+const readyButton = document.getElementById('ready-button');
+const startButton = document.getElementById('start-button');
+
+
+let myId = null;
+
+
+joinButton.onclick = () => {
+const nickname = playerNameInput.value.trim();
+if (!nickname) {
+errorMessage.textContent = "아이디를 입력해주세요.";
+return;
+}
+socket.emit('join-lobby', nickname);
+};
+
+
+socket.on('lobby-full', () => {
+errorMessage.textContent = "빈 방 없음!";
+});
+
+
+socket.on('update-lobby', (players) => {
+loginScreen.style.display = 'none';
+lobbyScreen.style.display = 'block';
+
+
+const slots = [slot1, slot2, slot3];
+slots.forEach(slot => {
+slot.textContent = "빈 슬롯";
+slot.style.color = 'black';
+});
+
+
+players.forEach((player, index) => {
+slots[index].textContent = player.nickname + (player.ready ? ' (준비중...)' : '');
+slots[index].style.color = player.color;
+
+
+if (socket.id === player.id) {
+myId = player.id;
+if (index === 0) {
+startButton.style.display = 'inline-block';
+readyButton.style.display = 'none';
+} else {
+startButton.style.display = 'none';
+readyButton.style.display = 'inline-block';
+}
+}
+});
+});
+
+
+readyButton.onclick = () => {
+socket.emit('ready');
+readyButton.disabled = true;
+};
+
+
+startButton.onclick = () => {
+socket.emit('start-game');
+};
+
+
+socket.on('start-game', (players) => {
+lobbyScreen.style.display = 'none';
+gameScreen.style.display = 'block';
+// TODO: 게임 시작 로직 연결 예정
+console.log("게임 시작!", players);
+});
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
