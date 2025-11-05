@@ -15,9 +15,7 @@ wss.on('connection', ws => {
     const data = JSON.parse(msg);
 
     if (data.type === 'join') {
-      const roomId = 'main';
-      const room = rooms[roomId];
-
+      const room = rooms.main;
       if (room.players.length >= 3) {
         ws.send(JSON.stringify({ type: 'full' }));
         ws.close();
@@ -37,16 +35,12 @@ wss.on('connection', ws => {
       };
 
       room.players.push(player);
-      ws.roomId = roomId;
+      ws.roomId = 'main';
       ws.player = player;
 
-      broadcast(roomId, {
+      broadcast('main', {
         type: 'lobby',
-        players: room.players.map(p => ({
-          id: p.id,
-          name: p.name,
-          color: p.color
-        }))
+        players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color }))
       });
     }
 
@@ -71,11 +65,7 @@ wss.on('connection', ws => {
     room.players = room.players.filter(p => p.id !== ws.player.id);
     broadcast('main', {
       type: 'lobby',
-      players: room.players.map(p => ({
-        id: p.id,
-        name: p.name,
-        color: p.color
-      }))
+      players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color }))
     });
   });
 });
